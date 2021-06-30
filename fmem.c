@@ -129,17 +129,19 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	error = fmem_read(offset, access_width, &data);
-	if (error == 0)
-		printf("(read%c)  0x%x == 0x%x\n", access_type, offset,
-		    data);
-
 	if (argc > 4) {
+		/* Write */
 		write_val = strtoul(argv[4], 0, 0);
 		error = fmem_write(offset, access_width, write_val);
 		if (error == 0)
 			printf("(write%c) 0x%x == 0x%x\n", access_type, offset,
 			    write_val);
+	} else {
+		/* Read */
+		error = fmem_read(offset, access_width, &data);
+		if (error == 0)
+			printf("(read%c)  0x%x == 0x%x\n", access_type, offset,
+			    data);
 	}
 
 	close(fd);
