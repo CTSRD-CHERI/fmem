@@ -27,6 +27,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+ 
 
 #include <sys/types.h>
 #include <sys/ioctl.h>
@@ -36,6 +37,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdint.h>
 
 struct fmem_request {
 	uint32_t offset;
