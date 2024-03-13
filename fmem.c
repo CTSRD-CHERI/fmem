@@ -39,47 +39,7 @@
 #include <fcntl.h>
 #include <stdint.h>
 
-struct fmem_request {
-	uint32_t offset;
-	uint32_t data;
-	uint32_t access_width;
-};
-
-#define	FMEM_READ	_IOWR('X', 1, struct fmem_request)
-#define	FMEM_WRITE	_IOWR('X', 2, struct fmem_request)
-
-static int fd;
-
-static int
-fmem_read(uint32_t offset, uint32_t access_width, uint32_t *data)
-{
-	struct fmem_request req;
-	int error;
-
-	req.offset = offset;
-	req.access_width = access_width;
-
-	error = ioctl(fd, FMEM_READ, &req);
-	if (error == 0)
-		*data = req.data;
-
-	return (error);
-}
-
-static int
-fmem_write(uint32_t offset, uint32_t access_width, uint32_t data)
-{
-	struct fmem_request req;
-	int error;
-
-	req.offset = offset;
-	req.data = data;
-	req.access_width = access_width;
-
-	error = ioctl(fd, FMEM_WRITE, &req);
-
-	return (error);
-}
+#include "fmem_utils.c"
 
 int
 main(int argc, char **argv)
@@ -105,7 +65,7 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	fd = open(argv[1], O_RDWR);
+	int fd = open(argv[1], O_RDWR);
 	if (fd < 0) {
 		fprintf(stderr, "could not open fmem device\n");
 		exit(1);
@@ -134,13 +94,13 @@ main(int argc, char **argv)
 	if (argc > 4) {
 		/* Write */
 		write_val = strtoul(argv[4], 0, 0);
-		error = fmem_write(offset, access_width, write_val);
+		error = fmem_write(offset, access_width, write_val, fd);
 		if (error == 0)
 			printf("(write%c) 0x%x == 0x%x\n", access_type, offset,
 			    write_val);
 	} else {
 		/* Read */
-		error = fmem_read(offset, access_width, &data);
+		error = fmem_read(offset, access_width, &data, fd);
 		if (error == 0)
 			printf("(read%c)  0x%x == 0x%x\n", access_type, offset,
 			    data);

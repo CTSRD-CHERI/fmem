@@ -54,6 +54,7 @@
 #include <gelf.h>
 #endif
 
+#include "fmem_utils.c"
 
 // ================================================================
 // Memory buffer into which we load the ELF file before
@@ -73,6 +74,8 @@
 #define MIN_MEM_ADDR_1GB  BASE_ADDR_B
 #define MAX_MEM_ADDR_1GB  (BASE_ADDR_B + 0x40000000lu)
 
+#define MEM_MASK_1GB 0x3FFFFFFF
+
 uint8_t *mem_buf;
 
 // Features of the ELF binary
@@ -83,6 +86,35 @@ uint64_t  max_addr;
 uint64_t  pc_start;       // Addr of label  '_start'
 uint64_t  pc_exit;        // Addr of label  'exit'
 uint64_t  tohost_addr;    // Addr of label  'tohost'
+
+static int h2f_fd;
+static int address_selector_fd;
+uint32_t last_offset;
+
+void fmem_memcpy(uint32_t dest,
+                 void *src,
+                 size_t n)
+{
+    for (; src < src + n; src += 4, dest += 4) {
+        uint32_t offset = dest & (~MEM_MASK_1GB);
+        if (offset != last_offset) {
+            int error = fmem_write(0, 4, offset, address_selector_fd);
+            if (error != 0) {
+	        printf("error with address selector (write) 0x0 == 0x%x\n",
+	               offset);
+	        break;
+	    }
+            last_offset = offset;
+        }
+        uint32_t write_val = ((uint32_t *)src)[0];
+        int error = fmem_write(dest & MEM_MASK_1GB, 4, write_val, h2f_fd);
+	if (error != 0) {
+	    printf("error with h2f bridge (write) 0x%x == 0x%x\n", offset,
+		    write_val);
+	    break;
+	}
+    }
+}
 
 // ================================================================
 // Load an ELF file.
@@ -217,7 +249,7 @@ void c_mem_load_elf (char *elf_filename,
 	    }
 
 	    if (shdr.sh_type != SHT_NOBITS && shdr.sh_addr!=0) {
-		memcpy (& (mem_buf [shdr.sh_addr-MIN_MEM_ADDR_1GB]), data->d_buf, data->d_size);
+		fmem_memcpy (shdr.sh_addr, data->d_buf, data->d_size);
 	    }
 	    fprintf (stdout, "addr %16" PRIx64 " to addr %16" PRIx64 "; size 0x%8lx (= %0ld) bytes\n",
 		     shdr.sh_addr, shdr.sh_addr + data->d_size, data->d_size, data->d_size);
@@ -293,57 +325,16 @@ void c_mem_load_elf (char *elf_filename,
 
 // ================================================================
 
-// Write out from word containing addr1 to word containing addr2
-void write_mem_hex_file (FILE *fp, uint64_t addr1, uint64_t addr2)
-{
-    const uint64_t bits_per_raw_mem_word   = 256;
-    uint64_t bytes_per_raw_mem_word  = bits_per_raw_mem_word / 8;    // 32
-    uint64_t raw_mem_word_align_mask = (~ ((uint64_t) (bytes_per_raw_mem_word - 1)));
-
-    fprintf (stdout, "Subtracting 0x%08" PRIx64 " base from addresses\n", BASE_ADDR_B);
-
-    // Align the start and end addrs to raw mem words
-    uint64_t a1 = (addr1 & raw_mem_word_align_mask);
-    uint64_t a2 = ((addr2 + bytes_per_raw_mem_word - 1) & raw_mem_word_align_mask);
-
-    fprintf (fp, "@%07" PRIx64 "    // raw_mem addr;  byte addr: %08" PRIx64 "\n",
-	     ((a1 - BASE_ADDR_B) / bytes_per_raw_mem_word),
-	     a1 - BASE_ADDR_B);
-	     
-    uint64_t addr;
-    for (addr = a1; addr < a2; addr += bytes_per_raw_mem_word) {
-	for (int j = (bytes_per_raw_mem_word - 1); j >= 0; j--)
-	    fprintf (fp, "%02x", mem_buf [addr+j-MIN_MEM_ADDR_1GB]);
-	fprintf (fp, "    // raw_mem addr %08" PRIx64 ";  byte addr %08" PRIx64 "\n",
-		 ((addr - BASE_ADDR_B) / bytes_per_raw_mem_word),
-		 (addr  - BASE_ADDR_B));
-    }
-
-    // Write last word, if necessary, to avoid warnings about missing locations
-    if (addr < (MAX_MEM_ADDR_1GB - bytes_per_raw_mem_word)) {
-	addr = MAX_MEM_ADDR_1GB - bytes_per_raw_mem_word;
-	fprintf (fp, "@%07" PRIx64 "    // last raw_mem addr;  byte addr: %08" PRIx64 "\n",
-		 ((addr - BASE_ADDR_B) / bytes_per_raw_mem_word),
-		 addr - BASE_ADDR_B);
-	for (int j = (bytes_per_raw_mem_word - 1); j >= 0; j--)
-	    fprintf (fp, "%02x", 0);
-	fprintf (fp, "    // raw_mem addr %08" PRIx64 ";  byte addr %08" PRIx64 "\n",
-		 ((addr - BASE_ADDR_B) / bytes_per_raw_mem_word),
-		 (addr  - BASE_ADDR_B));
-    }
-}
-
-// ================================================================
-
 void print_usage (FILE *fp, int argc, char *argv [])
 {
     fprintf (fp, "Usage:\n");
     fprintf (fp, "    %s  --help\n", argv [0]);
     fprintf (fp, "    %s  <ELF filename>  <mem hex filename>\n", argv [0]);
-    fprintf (fp, "Reads ELF file and writes a Verilog Hex Memory image file\n");
-    fprintf (fp, "ELF file should have addresses within this range:\n");
-    fprintf (fp, "<  Max: 0x%8" PRIx64 "\n", MAX_MEM_ADDR_1GB);
-    fprintf (fp, ">= Min: 0x%8" PRIx64 "\n", MIN_MEM_ADDR_1GB);
+    fprintf (fp, "Reads ELF file and writes to shared memory using fmem driver\n");
+    fprintf (fp, "of FreeBSD Toooba CHERI-RISC-V Terasic DE10 FPGA platform.\n");
+    //fprintf (fp, "ELF file should have addresses within this range:\n");
+    //fprintf (fp, "<  Max: 0x%8" PRIx64 "\n", MAX_MEM_ADDR_1GB);
+    //fprintf (fp, ">= Min: 0x%8" PRIx64 "\n", MIN_MEM_ADDR_1GB);
 }
 
 // ================================================================
@@ -358,12 +349,17 @@ int main (int argc, char *argv [])
 	print_usage (stderr, argc, argv);
 	return 1;
     }
+    
+    h2f_fd = open("/dev/fmem_h2f_dflt_1G", O_RDWR);
+    if (h2f_fd < 0) {
+	fprintf(stderr, "could not open fmem_h2f_dflt_1G device\n");
+	exit(1);
+    }
 
-    // Zero out the memory buffer before loading the ELF file
-    mem_buf = (uint8_t *)(calloc(MAX_MEM_SIZE, sizeof(uint8_t)));
-    if (mem_buf == NULL) {
-	fprintf (stderr, "ERROR: unable to allocate %lxMB for mem_buf\n", MAX_MEM_SIZE / 1024 / 1024);
-	return 1;
+    address_selector_fd = open("/dev/fmem_sys0_address_selector", O_RDWR);
+    if (address_selector_fd < 0) {
+	fprintf(stderr, "could not open fmem_sys0_address_selector device\n");
+	exit(1);
     }
 
     c_mem_load_elf (argv [1], "_start", "exit", "tohost");
@@ -372,17 +368,4 @@ int main (int argc, char *argv [])
 	print_usage (stderr, argc, argv);
 	exit (1);
     }
-
-    FILE *fp_out = fopen (argv [2], "w");
-    if (fp_out == NULL) {
-	fprintf (stderr, "ERROR: unable to open file '%s' for output\n", argv [2]);
-	return 1;
-    }
-
-    fprintf (stdout, "Writing mem hex to file '%s'\n", argv [2]);
-    write_mem_hex_file (fp_out, BASE_ADDR_B, max_addr);
-    // write_mem_hex_file (fp_out, BASE_ADDR_B, MAX_MEM_ADDR_1GB);
-
-    free(mem_buf);
-    fclose (fp_out);
 }
