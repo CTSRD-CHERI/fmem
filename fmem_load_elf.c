@@ -62,7 +62,7 @@
 
 // 1 Gigabyte size
 // #define MAX_MEM_SIZE (((uint64_t) 0x400) * ((uint64_t) 0x400) * ((uint64_t) 0x400))
-#define MAX_MEM_SIZE ((uint64_t) 0x90000000)
+#define MAX_MEM_SIZE ((uint64_t) 0xFFFFFFFFF0000000)
 
 #define BASE_ADDR_B  0x80000000lu
 
@@ -95,7 +95,9 @@ void fmem_memcpy(uint32_t dest,
                  void *src,
                  size_t n)
 {
-    for (; src < src + n; src += 4, dest += 4) {
+    //printf("fmem_memcpy called; dest == 0x%x, src == 0x%x, n = 0x%x", dest, (int)src, (int)n);
+    void *end = src + n;
+    for (; src < end; src += 4, dest += 4) {
         uint32_t offset = dest & (~MEM_MASK_1GB);
         if (offset != last_offset) {
             int error = fmem_write(0, 4, offset, address_selector_fd);
@@ -109,7 +111,7 @@ void fmem_memcpy(uint32_t dest,
         uint32_t write_val = ((uint32_t *)src)[0];
         int error = fmem_write(dest & MEM_MASK_1GB, 4, write_val, h2f_fd);
 	if (error != 0) {
-	    printf("error with h2f bridge (write) 0x%x == 0x%x\n", offset,
+	    printf("error with h2f bridge (write) 0x%x == 0x%x\n", dest,
 		    write_val);
 	    break;
 	}
