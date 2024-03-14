@@ -118,6 +118,31 @@ void fmem_memcpy(uint32_t dest,
     }
 }
 
+void fmem_memset(uint32_t dest,
+		 uint32_t fill_value,
+		 size_t n)
+{
+    uint32_t end = dest + n;
+    for (; dest < end; dest += 4) {
+	uint32_t offset = dest & (~MEM_MASK_1GB);
+        if (offset != last_offset) {
+            int error = fmem_write(0, 4, offset, address_selector_fd);
+	    if (error != 0) {
+	        printf("error with address selector (write) 0x0 == 0x%x\n",
+	               offset);
+	        break;
+	    }
+            last_offset = offset;
+        }
+        int error = fmem_write(dest & MEM_MASK_1GB, 4, fill_value, h2f_fd);
+	if (error != 0) {
+	    printf("error with h2f bridge (write) 0x%x == 0x%x\n", dest,
+		    fill_value);
+	    break;
+	}
+    }
+}
+
 // ================================================================
 // Load an ELF file.
 
@@ -250,8 +275,11 @@ void c_mem_load_elf (char *elf_filename,
 		exit (1);
 	    }
 
-	    if (shdr.sh_type != SHT_NOBITS && shdr.sh_addr!=0) {
-		fmem_memcpy (shdr.sh_addr, data->d_buf, data->d_size);
+	    if (shdr.sh_addr!=0) {
+		if (shdr.sh_type == SHT_NOBITS)
+		    fmem_memset(shdr.sh_addr, 0, data->d_size);
+		else fmem_memcpy (shdr.sh_addr, data->d_buf, data->d_size);
+		fprintf (stdout, " wrote ");
 	    }
 	    fprintf (stdout, "addr %16" PRIx64 " to addr %16" PRIx64 "; size 0x%8lx (= %0ld) bytes\n",
 		     shdr.sh_addr, shdr.sh_addr + data->d_size, data->d_size, data->d_size);
@@ -331,7 +359,7 @@ void print_usage (FILE *fp, int argc, char *argv [])
 {
     fprintf (fp, "Usage:\n");
     fprintf (fp, "    %s  --help\n", argv [0]);
-    fprintf (fp, "    %s  <ELF filename>  <mem hex filename>\n", argv [0]);
+    fprintf (fp, "    %s  <ELF filename>\n", argv [0]);
     fprintf (fp, "Reads ELF file and writes to shared memory using fmem driver\n");
     fprintf (fp, "of FreeBSD Toooba CHERI-RISC-V Terasic DE10 FPGA platform.\n");
     //fprintf (fp, "ELF file should have addresses within this range:\n");
@@ -347,7 +375,7 @@ int main (int argc, char *argv [])
 	print_usage (stdout, argc, argv);
 	return 0;
     }
-    else if (argc != 3) {
+    else if (argc != 2) {
 	print_usage (stderr, argc, argv);
 	return 1;
     }
