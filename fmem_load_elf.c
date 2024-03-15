@@ -89,54 +89,67 @@ uint64_t  tohost_addr;    // Addr of label  'tohost'
 
 static int h2f_fd;
 static int address_selector_fd;
-uint32_t last_offset;
+uint64_t last_offset;
 
-void fmem_memcpy(uint32_t dest,
+typedef struct {
+    uint64_t virtStart;
+    uint64_t virtEnd;
+    uint64_t phys;
+} Trans_Table;
+int transtblSz;
+
+void fmem_memcpy(uint64_t dest,
                  void *src,
                  size_t n)
 {
     //printf("fmem_memcpy called; dest == 0x%x, src == 0x%x, n = 0x%x", dest, (int)src, (int)n);
     void *end = src + n;
     for (; src < end; src += 4, dest += 4) {
-        uint32_t offset = dest & (~MEM_MASK_1GB);
+        uint64_t offset = dest & (~MEM_MASK_1GB);
         if (offset != last_offset) {
-            int error = fmem_write(0, 4, offset, address_selector_fd);
+	    printf("writing address selector (write) 0x0 == 0x%" PRIx64 "\n",
+	               offset);
+            int error = fmem_write(0, 4, (uint32_t)offset, address_selector_fd);
             if (error != 0) {
-	        printf("error with address selector (write) 0x0 == 0x%x\n",
+	        printf("error with address selector (write) 0x0 == 0x%" PRIx64 "\n",
 	               offset);
 	        break;
 	    }
+	    //error = fmem_write(4, 4, (uint32_t)(offset>>32), address_selector_fd);
             last_offset = offset;
         }
         uint32_t write_val = ((uint32_t *)src)[0];
         int error = fmem_write(dest & MEM_MASK_1GB, 4, write_val, h2f_fd);
 	if (error != 0) {
-	    printf("error with h2f bridge (write) 0x%x == 0x%x\n", dest,
+	    printf("error with h2f bridge (write) 0x%" PRIx64 " == 0x%x\n", dest,
 		    write_val);
 	    break;
 	}
     }
 }
 
-void fmem_memset(uint32_t dest,
+void fmem_memset(uint64_t dest,
 		 uint32_t fill_value,
 		 size_t n)
 {
     uint32_t end = dest + n;
     for (; dest < end; dest += 4) {
-	uint32_t offset = dest & (~MEM_MASK_1GB);
+	uint64_t offset = dest & (~MEM_MASK_1GB);
         if (offset != last_offset) {
-            int error = fmem_write(0, 4, offset, address_selector_fd);
+            printf("writing address selector (write) 0x0 == 0x%" PRIx64 "\n",
+	               offset);
+	    int error = fmem_write(0, 4, (uint32_t)offset, address_selector_fd);
 	    if (error != 0) {
-	        printf("error with address selector (write) 0x0 == 0x%x\n",
+	        printf("error with address selector (write) 0x0 == 0x%" PRIx64 "\n",
 	               offset);
 	        break;
 	    }
+	    //error = fmem_write(4, 4, (uint32_t)(offset>>32), address_selector_fd);
             last_offset = offset;
         }
         int error = fmem_write(dest & MEM_MASK_1GB, 4, fill_value, h2f_fd);
 	if (error != 0) {
-	    printf("error with h2f bridge (write) 0x%x == 0x%x\n", dest,
+	    printf("error with h2f bridge (write) 0x%" PRIx64 " == 0x%x\n", dest,
 		    fill_value);
 	    break;
 	}
@@ -198,7 +211,7 @@ void c_mem_load_elf (char *elf_filename,
 	exit (1);
     }
 
-    // Is this a 32b or 64 ELF?
+    // Is this a 32b or 64b ELF?
     if (gelf_getclass (e) == ELFCLASS32) {
 	fprintf (stdout, "c_mem_load_elf: %s is a 32-bit ELF file\n", elf_filename);
 	bitwidth = 32;
@@ -227,6 +240,19 @@ void c_mem_load_elf (char *elf_filename,
 		 "ERROR: c_mem_load_elf: %s is a big-endian 64-bit RISC-V executable which is not supported\n",
 		 elf_filename);
 	exit (1);
+    }
+
+    transtblSz = ehdr.e_phnum;
+    Trans_Table *transtbl = malloc(sizeof(Trans_Table) * transtblSz);
+    GElf_Phdr *phdr = malloc(sizeof(GElf_Phdr));
+    fprintf (stdout, "Physical Table Allocation: Table Size %d\n", transtblSz);
+    for (int i = 0; i < transtblSz; i++) {
+        phdr = gelf_getphdr(e, i, phdr);
+        fprintf (stdout, "Physical Table Entry: Virtual Address 0x%" PRIx64 " Size: 0x%" PRIx64 " Physical Address 0x%" PRIx64 "\n",
+			phdr->p_vaddr, phdr->p_memsz, phdr->p_paddr);
+	transtbl[i].virtStart = (uint64_t)phdr->p_vaddr;
+	transtbl[i].virtEnd   = (uint64_t)(phdr->p_vaddr + phdr->p_memsz);
+	transtbl[i].phys = (uint64_t)phdr->p_paddr;
     }
 
     // Grab the string section index
@@ -276,10 +302,16 @@ void c_mem_load_elf (char *elf_filename,
 	    }
 
 	    if (shdr.sh_addr!=0) {
+		uint64_t phys_addr = 0;
+		for (int i=0; i<transtblSz; i++) {
+		    if (shdr.sh_addr >= transtbl[i].virtStart && shdr.sh_addr <  transtbl[i].virtEnd)
+	                phys_addr = transtbl[i].phys + (shdr.sh_addr - transtbl[i].virtStart);
+		}
+		if (phys_addr == 0) phys_addr = shdr.sh_addr;
+		fprintf (stdout, " writing physical address 0x%16" PRIx64"; ", phys_addr);
 		if (shdr.sh_type == SHT_NOBITS)
-		    fmem_memset(shdr.sh_addr, 0, data->d_size);
-		else fmem_memcpy (shdr.sh_addr, data->d_buf, data->d_size);
-		fprintf (stdout, " wrote ");
+		    fmem_memset(phys_addr, 0, data->d_size);
+		else fmem_memcpy (phys_addr, data->d_buf, data->d_size);
 	    }
 	    fprintf (stdout, "addr %16" PRIx64 " to addr %16" PRIx64 "; size 0x%8lx (= %0ld) bytes\n",
 		     shdr.sh_addr, shdr.sh_addr + data->d_size, data->d_size, data->d_size);
