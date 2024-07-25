@@ -7,7 +7,7 @@
 
 	/*-
 	 * Copyright (c) 2024 Jonathan Woodruff
-	 * Copyright (c) 2022 Franz Fuchs
+	 * Copyright (c) 2022-2024 Franz Fuchs
 	 * All rights reserved.
 	 *
 	 * This software was developed by the University of  Cambridge
@@ -278,13 +278,7 @@ void c_mem_load_elf (char *elf_filename,
 
 	Elf_Data *data = 0;
 	// If we find a code/data section, load it into the model
-	if (   ((shdr.sh_type == SHT_PROGBITS)
-		|| (shdr.sh_type == SHT_NOBITS)
-		|| (shdr.sh_type == SHT_INIT_ARRAY)
-		|| (shdr.sh_type == SHT_FINI_ARRAY))
-	    && ((shdr.sh_flags & SHF_WRITE)
-		|| (shdr.sh_flags & SHF_ALLOC)
-		|| (shdr.sh_flags & SHF_EXECINSTR))) {
+	if  (shdr.sh_flags == SHF_ALLOC) {
 	    data = elf_getdata (scn, data);
 
 	    // n_initialized += data->d_size;
