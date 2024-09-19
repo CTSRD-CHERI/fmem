@@ -395,6 +395,26 @@ void print_usage (FILE *fp, int argc, char *argv [])
 
 // ================================================================
 
+// For getting null-terminated strings from environment variables,
+// or falling back to a default string.
+void get_string_from_env (
+	const char* __restrict__ env_var,
+	const char* __restrict__ default_val,
+	char* __restrict__ destination,
+	size_t max_length
+) {
+	const char* env_val = getenv(env_var);
+	if (env_val) {
+		strncpy(destination, env_val, max_length);
+	} else {
+		strncpy(destination, default_val, max_length);
+	}
+	// Always null-terminate
+	destination[max_length - 1] = '\0';
+}
+
+// ================================================================
+
 int main (int argc, char *argv [])
 {
     if ((argc == 2) && (strcmp (argv [1], "--help") == 0)) {
@@ -406,16 +426,34 @@ int main (int argc, char *argv [])
 	return 1;
     }
     
-    h2f_fd = open("/dev/fmem_h2f_dflt_1G", O_RDWR);
+    char h2f_dev_path[256] = {0}; // Zero-initialized string
+	get_string_from_env(
+		// Use this envvar if it's set
+		"RISCV_DMA_FMEM_DEV",
+		// or this value if not
+		"/dev/fmem_h2f_dflt_1G",
+		h2f_dev_path,
+		256
+	);
+    h2f_fd = open(h2f_dev_path, O_RDWR);
     if (h2f_fd < 0) {
-	fprintf(stderr, "could not open fmem_h2f_dflt_1G device\n");
-	exit(1);
+		fprintf(stderr, "could not open fmem_h2f_dflt_1G device '%s'\n", h2f_dev_path);
+		exit(1);
     }
 
-    address_selector_fd = open("/dev/fmem_sys0_address_selector", O_RDWR);
+    char address_selector_dev_path[256] = {0}; // Zero-initialized string
+	get_string_from_env(
+		// Use this envvar if it's set
+		"RISCV_ADDRESS_SELECTOR_FMEM_DEV",
+		// or this value if not
+		"/dev/fmem_sys0_address_selector",
+		address_selector_dev_path,
+		256
+	);
+    address_selector_fd = open(address_selector_dev_path, O_RDWR);
     if (address_selector_fd < 0) {
-	fprintf(stderr, "could not open fmem_sys0_address_selector device\n");
-	exit(1);
+		fprintf(stderr, "could not open fmem_sys0_address_selector device '%s'\n", address_selector_dev_path);
+		exit(1);
     }
 
     c_mem_load_elf (argv [1], "_start", "exit", "tohost");
