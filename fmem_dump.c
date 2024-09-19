@@ -212,5 +212,21 @@ int main (int argc, char *argv [])
 	}
 	fclose(dump_file);
 
+	// Reset the address selector for anyone who comes after us.
+	// Write the low half...
+	fmem_write(
+		0x0,
+		4,
+		0,
+		address_selector_fd
+	);
+	// ...then write the high half
+	fmem_write(
+		0x4,
+		4,
+		0,
+		address_selector_fd
+	);
+
 	return 0;
 }
