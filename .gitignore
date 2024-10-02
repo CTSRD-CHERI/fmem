@@ -1,3 +1,4 @@
 fmem
 fmem_load_elf
 fmem_dump
+fmem_uart
