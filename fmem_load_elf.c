@@ -102,7 +102,7 @@ void fmem_memcpy(uint64_t dest,
                  void *src,
                  size_t n)
 {
-    //printf("fmem_memcpy called; dest == 0x%x, src == 0x%x, n = 0x%x", dest, (int)src, (int)n);
+    printf("fmem_memcpy called; dest == 0x%x, src == 0x%x, n = 0x%x", dest, (int)src, (int)n);
     void *end = src + n;
     // Do not attempt this copy if source and destination do not have the same alignment.
     uintptr_t  s  = (uintptr_t)src;
@@ -128,10 +128,12 @@ void fmem_memcpy(uint64_t dest,
 	               offset);
 	        break;
 	    }
-	    //error = fmem_write(4, 4, (uint32_t)(offset>>32), address_selector_fd);
+	    error = fmem_write(4, 4, (uint32_t)(offset>>32), address_selector_fd);
             last_offset = offset;
         }
         uint32_t write_val = ((uint32_t *)src)[0];
+        printf("about to write 0x%x == 0x%" PRIx64 "\n",
+	               write_val, dest & MEM_MASK_1GB);
         int error = fmem_write(dest & MEM_MASK_1GB, 4, write_val, h2f_fd);
     	if (error != 0) {
     	    printf("error with h2f bridge (write) 0x%" PRIx64 " == 0x%x\n", dest,
