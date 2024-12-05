@@ -132,8 +132,8 @@ void fmem_memcpy(uint64_t dest,
             last_offset = offset;
         }
         uint32_t write_val = ((uint32_t *)src)[0];
-        printf("about to write 0x%x == 0x%" PRIx64 "\n",
-	               write_val, dest & MEM_MASK_1GB);
+        //printf("about to write 0x%x == 0x%" PRIx64 "\n",
+	//               write_val, dest & MEM_MASK_1GB);
         int error = fmem_write(dest & MEM_MASK_1GB, 4, write_val, h2f_fd);
     	if (error != 0) {
     	    printf("error with h2f bridge (write) 0x%" PRIx64 " == 0x%x\n", dest,
