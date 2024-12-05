@@ -102,12 +102,12 @@ void fmem_memcpy(uint64_t dest,
                  void *src,
                  size_t n)
 {
-    printf("fmem_memcpy called; dest == 0x%x, src == 0x%x, n = 0x%x", dest, (int)src, (int)n);
+    printf("fmem_memcpy called; dest == 0x%lx, src == 0x%p, n = 0x%x", dest, src, (int)n);
     void *end = src + n;
     // Do not attempt this copy if source and destination do not have the same alignment.
     uintptr_t  s  = (uintptr_t)src;
-    if (s % 4 != dst % 4) {
-        printf("error unaligned copy; cannot copy 0x%p into " PRIx64 "\n", src, dest);
+    if (s % 4 != dest % 4) {
+        printf("error unaligned copy; cannot copy 0x%p into 0x%" PRIx64 "\n", src, dest);
         return;
     }
     // Hopefully this alignment does nothing, but if it does, it prevents the kernel from crashing.
