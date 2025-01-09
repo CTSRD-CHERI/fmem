@@ -49,7 +49,6 @@
 
 #ifdef __APPLE__
 #include <libelf/gelf.h>
-#include <vector>
 #else
 #include <gelf.h>
 #endif
@@ -98,44 +97,41 @@ typedef struct {
 } Trans_Table;
 int transtblSz;
 
+void set_address_selector(uint64_t address)
+{
+	uint64_t offset = address & (~MEM_MASK_1GB);
+	if (offset != last_offset) {
+		printf("writing address selector (write) 0x0 == 0x%" PRIx64 "\n",
+				offset);
+		int error = fmem_write(0, 4, (uint32_t)offset, address_selector_fd);
+		if (error != 0) {
+			printf("error with address selector (write) 0x0 == 0x%" PRIx64 "\n",
+					offset);
+		}
+		error = fmem_write(4, 4, (uint32_t)(offset>>32), address_selector_fd);
+		last_offset = offset;
+	}
+}
+
 void fmem_memcpy(uint64_t dest,
                  void *src,
                  size_t n)
 {
     printf("fmem_memcpy called; dest == 0x%lx, src == 0x%p, n = 0x%x", dest, src, (int)n);
     void *end = src + n;
-    // Do not attempt this copy if source and destination do not have the same alignment.
-    uintptr_t  s  = (uintptr_t)src;
-    if (s % 4 != dest % 4) {
-        printf("error unaligned copy; cannot copy 0x%p into 0x%" PRIx64 "\n", src, dest);
-        return;
-    }
-    // Hopefully this alignment does nothing, but if it does, it prevents the kernel from crashing.
-    // This carelessly discards the first few bytes.
-    if (s % 4 != 0) {
-        s += 4 - s % 4;
-        dest += 4 - s % 4;
-        src = (void *)s;
-    }
-    for (; src < end; src += 4, dest += 4) {
-        uint64_t offset = dest & (~MEM_MASK_1GB);
-        if (offset != last_offset) {
-	    printf("writing address selector (write) 0x0 == 0x%" PRIx64 "\n",
-	               offset);
-            int error = fmem_write(0, 4, (uint32_t)offset, address_selector_fd);
-            if (error != 0) {
-	        printf("error with address selector (write) 0x0 == 0x%" PRIx64 "\n",
-	               offset);
-	        break;
-	    }
-	    error = fmem_write(4, 4, (uint32_t)(offset>>32), address_selector_fd);
-            last_offset = offset;
-        }
+    while (src < end) {
+	    set_address_selector(dest);
         uint32_t write_val = ((uint32_t *)src)[0];
         //printf("about to write 0x%x == 0x%" PRIx64 "\n",
-	//               write_val, dest & MEM_MASK_1GB);
-        int error = fmem_write(dest & MEM_MASK_1GB, 4, write_val, h2f_fd);
-    	if (error != 0) {
+	    //        write_val, dest & MEM_MASK_1GB);
+		// Only write one byte if either address is not aligned, or if we're near the end.
+		int inc = ((((uint64_t)src)%4==0)
+		          && (dest%4==0)
+				  && (end-src>=4)) ? 4:1;
+        int error = fmem_write(dest & MEM_MASK_1GB, inc, write_val, h2f_fd);
+    	src += inc;
+		dest += inc;
+		if (error != 0) {
     	    printf("error with h2f bridge (write) 0x%" PRIx64 " == 0x%x\n", dest,
     		    write_val);
     	    break;
@@ -148,26 +144,16 @@ void fmem_memset(uint64_t dest,
 		 size_t n)
 {
     uint32_t end = dest + n;
-    for (; dest < end; dest += 4) {
-	uint64_t offset = dest & (~MEM_MASK_1GB);
-        if (offset != last_offset) {
-            printf("writing address selector (write) 0x0 == 0x%" PRIx64 "\n",
-	               offset);
-	    int error = fmem_write(0, 4, (uint32_t)offset, address_selector_fd);
-	    if (error != 0) {
-	        printf("error with address selector (write) 0x0 == 0x%" PRIx64 "\n",
-	               offset);
-	        break;
-	    }
-	    //error = fmem_write(4, 4, (uint32_t)(offset>>32), address_selector_fd);
-            last_offset = offset;
-        }
-        int error = fmem_write(dest & MEM_MASK_1GB, 4, fill_value, h2f_fd);
-	if (error != 0) {
-	    printf("error with h2f bridge (write) 0x%" PRIx64 " == 0x%x\n", dest,
+    while (dest < end) {
+	    set_address_selector(dest);
+		int inc = ((dest%4==0) && (end-dest>=4)) ? 4:1;
+        int error = fmem_write(dest & MEM_MASK_1GB, inc, fill_value, h2f_fd);
+		dest += inc;
+		if (error != 0) {
+	    	printf("error with h2f bridge (write) 0x%" PRIx64 " == 0x%x\n", dest,
 		    fill_value);
-	    break;
-	}
+	    	break;
+		}
     }
 }
 
