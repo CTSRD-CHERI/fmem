@@ -303,6 +303,7 @@ void c_mem_load_elf (char *elf_filename,
 		}
 		if (phys_addr == 0) phys_addr = shdr.sh_addr;
 		fprintf (stdout, " writing physical address 0x%16" PRIx64"; ", phys_addr);
+		fflush (stdout);
 		if (shdr.sh_type == SHT_NOBITS)
 		    fmem_memset(phys_addr, 0, data->d_size);
 		else fmem_memcpy (phys_addr, data->d_buf, data->d_size);
