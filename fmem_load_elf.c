@@ -278,7 +278,7 @@ void c_mem_load_elf (char *elf_filename,
 
 	Elf_Data *data = 0;
 	// If we find a code/data section, load it into the model
-	if  (shdr.sh_flags == SHF_ALLOC) {
+	if  (shdr.sh_flags & SHF_ALLOC) {
 	    data = elf_getdata (scn, data);
 
 	    // n_initialized += data->d_size;
