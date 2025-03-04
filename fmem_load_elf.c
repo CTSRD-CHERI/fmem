@@ -88,7 +88,7 @@ uint64_t  tohost_addr;    // Addr of label  'tohost'
 
 static int h2f_fd;
 static int address_selector_fd;
-uint64_t last_offset;
+uint64_t last_offset = - 1;
 
 typedef struct {
     uint64_t virtStart;
